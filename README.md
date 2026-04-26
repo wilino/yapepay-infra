@@ -20,6 +20,9 @@ Infraestructura como código para **YapePay** usando **AWS CDK + TypeScript**.
 > `POST /v1/qr`. Además instancia `YapepayDevObservabilityStack`, con dashboard
 > y alarmas CloudWatch para el MVP. Los demás stacks en `lib/stacks/` siguen
 > como **placeholders** y no se instancian todavía.
+>
+> Prerrequisitos operativos ya verificados por CLI: MFA root activo y Budget
+> mensual `yapepay-dev-monthly-budget` configurado con alertas.
 
 ---
 
@@ -59,13 +62,15 @@ npm install                       # dependencias
 npm run build                     # tsc
 npm test                          # jest
 ./scripts/check-prerequisites.sh  # auditoría entorno
+./scripts/check-deploy-readiness.sh # verifica MFA root + Budget (solo lectura)
 ./scripts/synth.sh                # build + cdk synth
 ./scripts/diff.sh                 # build + cdk diff
 ```
 
-> ⚠️ **No ejecutar `cdk deploy` hasta tener:**
-> - Budget de billing configurado.
-> - MFA activado en la cuenta root.
+> ⚠️ **Antes de cualquier `cdk deploy`:**
+> - Ejecutar `./scripts/check-deploy-readiness.sh`.
+> - Revisar `./scripts/diff.sh`.
+> - Desplegar solo con confirmación explícita.
 >
 > Cuando los pre-requisitos estén listos, usar `./scripts/deploy-dev.sh` (pide
 > confirmación literal). Para limpiar: `./scripts/destroy-dev.sh`.
@@ -102,25 +107,30 @@ yapepay-infra/
 ├── lambda/
 │   ├── qr-handler/                 # handler TypeScript MVP
 │   └── notification-handler/       # handler TypeScript MVP
-├── docs/                           # documentación pública (sí versionada)
-│   ├── architecture.md
-│   ├── deployment.md
-│   ├── cost-control.md
-│   └── aws-educate-notes.md
 ├── scripts/
 │   ├── check-prerequisites.sh
 │   ├── setup-aws-educate.md
+│   ├── check-deploy-readiness.sh
 │   ├── bootstrap.sh
 │   ├── synth.sh
 │   ├── diff.sh
 │   ├── deploy-dev.sh
 │   └── destroy-dev.sh
 ├── test/
-│   └── yapepay-infra.test.ts
+│   ├── yapepay-infra.test.ts
+│   ├── lambda-handlers.test.ts
+│   └── qr-http-contract.test.ts
 ├── .github/workflows/ci.yml
 ├── .docs/                          # local-only · NO versionar
+│   ├── architecture.md
+│   ├── deployment.md
+│   ├── cost-control.md
+│   ├── aws-educate-notes.md
+│   ├── deploy-prerequisites.md
 │   ├── plan_implementacion_cdk_yapepay.md
-│   └── bitacora_implementacion.md
+│   ├── bitacora_implementacion.md
+│   └── reviewer/
+│       └── checklist_avance_vs_plan.md
 ├── cdk.json
 ├── package.json
 ├── tsconfig.json
@@ -143,13 +153,15 @@ Stacks posteriores (`Network`, `Database`, `Cache`, `Services`, `Auth`,
 
 ## Documentación
 
-- [`docs/architecture.md`](docs/architecture.md)
-- [`docs/deployment.md`](docs/deployment.md)
-- [`docs/cost-control.md`](docs/cost-control.md)
-- [`docs/aws-educate-notes.md`](docs/aws-educate-notes.md)
+Toda la documentación técnica vive en `.docs/` y **no se versiona**. Esta
+decisión mantiene fuera del repositorio público el material académico,
+bitácoras, checklist de revisión y notas operativas locales.
 
-La documentación interna detallada vive en `.docs/` y **no se versiona**:
-
+- `.docs/architecture.md`
+- `.docs/deployment.md`
+- `.docs/cost-control.md`
+- `.docs/aws-educate-notes.md`
+- `.docs/deploy-prerequisites.md`
 - `.docs/plan_implementacion_cdk_yapepay.md`
 - `.docs/bitacora_implementacion.md`
 - `.docs/bitacora_storage_stack.md`
@@ -160,6 +172,11 @@ La documentación interna detallada vive en `.docs/` y **no se versiona**:
 - `.docs/bitacora_security_stack.md`
 - `.docs/bitacora_kms_integration.md`
 - `.docs/bitacora_lambda_handlers.md`
+- `.docs/bitacora_qr_payload_validation.md`
+- `.docs/bitacora_qr_smithy_output.md`
+- `.docs/bitacora_qr_http_contract.md`
+- `.docs/bitacora_deploy_prerequisites.md`
+- `.docs/reviewer/checklist_avance_vs_plan.md`
 
 ## Seguridad
 
