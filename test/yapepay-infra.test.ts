@@ -5,6 +5,7 @@ import { devConfig } from '../lib/config/dev.js';
 import { ApiStack } from '../lib/stacks/api-stack.js';
 import { MessagingStack } from '../lib/stacks/messaging-stack.js';
 import { ObservabilityStack } from '../lib/stacks/observability-stack.js';
+import { SecurityStack } from '../lib/stacks/security-stack.js';
 import { ServerlessStack } from '../lib/stacks/serverless-stack.js';
 import { StorageStack } from '../lib/stacks/storage-stack.js';
 
@@ -20,19 +21,49 @@ test('devConfig se carga con valores esperados', () => {
   expect(devConfig.tags.ManagedBy).toBe('cdk');
 });
 
+test('SecurityStack sintetiza una clave KMS compartida con rotación', () => {
+  const template = synthSecurityTemplate();
+
+  template.resourceCountIs('AWS::KMS::Key', 1);
+  template.resourceCountIs('AWS::KMS::Alias', 1);
+  template.resourceCountIs('AWS::SecretsManager::Secret', 0);
+  template.hasResourceProperties('AWS::KMS::Key', {
+    Description: 'Clave KMS compartida para yapepay dev.',
+    EnableKeyRotation: true,
+    PendingWindowInDays: 7,
+  });
+  template.hasResourceProperties('AWS::KMS::Alias', {
+    AliasName: 'alias/yapepay/dev',
+    TargetKeyId: Match.anyValue(),
+  });
+});
+
+test('SecurityStack expone outputs de la clave KMS compartida', () => {
+  const template = synthSecurityTemplate();
+
+  template.hasOutput('SharedSecurityKeyArn', {
+    Value: Match.anyValue(),
+  });
+  template.hasOutput('SharedSecurityKeyAliasName', {
+    Value: 'alias/yapepay/dev',
+  });
+});
+
 test('StorageStack sintetiza dos buckets S3 seguros', () => {
   const template = synthStorageTemplate();
 
   template.resourceCountIs('AWS::S3::Bucket', 2);
   template.allResourcesProperties('AWS::S3::Bucket', {
     BucketEncryption: {
-      ServerSideEncryptionConfiguration: [
-        {
-          ServerSideEncryptionByDefault: {
-            SSEAlgorithm: 'AES256',
-          },
-        },
-      ],
+      ServerSideEncryptionConfiguration: Match.arrayWith([
+        Match.objectLike({
+          BucketKeyEnabled: true,
+          ServerSideEncryptionByDefault: Match.objectLike({
+            KMSMasterKeyID: Match.anyValue(),
+            SSEAlgorithm: 'aws:kms',
+          }),
+        }),
+      ]),
     },
     PublicAccessBlockConfiguration: {
       BlockPublicAcls: true,
@@ -121,8 +152,9 @@ test('MessagingStack sintetiza colas SQS para transacciones y notificaciones', (
 
   template.resourceCountIs('AWS::SQS::Queue', 4);
   template.allResourcesProperties('AWS::SQS::Queue', {
+    KmsDataKeyReusePeriodSeconds: 300,
+    KmsMasterKeyId: Match.anyValue(),
     MessageRetentionPeriod: 1209600,
-    SqsManagedSseEnabled: true,
     VisibilityTimeout: 60,
   });
   template.hasResourceProperties('AWS::SQS::Queue', {
@@ -405,8 +437,16 @@ test('ObservabilityStack expone outputs del dashboard y topic de alarmas', () =>
 
 test('cdk.App sintetiza los stacks MVP implementados desde pruebas', () => {
   const app = new cdk.App();
+  const securityStack = new SecurityStack(app, 'TestSecurityStack', {
+    config: devConfig,
+    env: {
+      account: '123456789012',
+      region: devConfig.region,
+    },
+  });
   new StorageStack(app, 'TestStorageStack', {
     config: devConfig,
+    encryptionKey: securityStack.sharedKey,
     env: {
       account: '123456789012',
       region: devConfig.region,
@@ -414,6 +454,7 @@ test('cdk.App sintetiza los stacks MVP implementados desde pruebas', () => {
   });
   const messagingStack = new MessagingStack(app, 'TestMessagingStack', {
     config: devConfig,
+    encryptionKey: securityStack.sharedKey,
     env: {
       account: '123456789012',
       region: devConfig.region,
@@ -451,13 +492,32 @@ test('cdk.App sintetiza los stacks MVP implementados desde pruebas', () => {
   });
 
   const assembly = app.synth();
-  expect(assembly.stacks.length).toBe(5);
+  expect(assembly.stacks.length).toBe(6);
 });
+
+function synthSecurityTemplate(): Template {
+  const app = new cdk.App();
+  const stack = createTestSecurityStack(app);
+
+  return Template.fromStack(stack);
+}
+
+function createTestSecurityStack(app: cdk.App): SecurityStack {
+  return new SecurityStack(app, 'TestSecurityStack', {
+    config: devConfig,
+    env: {
+      account: '123456789012',
+      region: devConfig.region,
+    },
+  });
+}
 
 function synthStorageTemplate(): Template {
   const app = new cdk.App();
+  const securityStack = createTestSecurityStack(app);
   const stack = new StorageStack(app, 'TestStorageStack', {
     config: devConfig,
+    encryptionKey: securityStack.sharedKey,
     env: {
       account: '123456789012',
       region: devConfig.region,
@@ -469,8 +529,10 @@ function synthStorageTemplate(): Template {
 
 function synthMessagingTemplate(): Template {
   const app = new cdk.App();
+  const securityStack = createTestSecurityStack(app);
   const stack = new MessagingStack(app, 'TestMessagingStack', {
     config: devConfig,
+    encryptionKey: securityStack.sharedKey,
     env: {
       account: '123456789012',
       region: devConfig.region,
@@ -482,8 +544,10 @@ function synthMessagingTemplate(): Template {
 
 function synthServerlessTemplate(): Template {
   const app = new cdk.App();
+  const securityStack = createTestSecurityStack(app);
   const messagingStack = new MessagingStack(app, 'TestMessagingStack', {
     config: devConfig,
+    encryptionKey: securityStack.sharedKey,
     env: {
       account: '123456789012',
       region: devConfig.region,
@@ -503,8 +567,10 @@ function synthServerlessTemplate(): Template {
 
 function synthApiTemplate(): Template {
   const app = new cdk.App();
+  const securityStack = createTestSecurityStack(app);
   const messagingStack = new MessagingStack(app, 'TestMessagingStack', {
     config: devConfig,
+    encryptionKey: securityStack.sharedKey,
     env: {
       account: '123456789012',
       region: devConfig.region,
@@ -532,8 +598,10 @@ function synthApiTemplate(): Template {
 
 function synthObservabilityTemplate(): Template {
   const app = new cdk.App();
+  const securityStack = createTestSecurityStack(app);
   const messagingStack = new MessagingStack(app, 'TestMessagingStack', {
     config: devConfig,
+    encryptionKey: securityStack.sharedKey,
     env: {
       account: '123456789012',
       region: devConfig.region,

@@ -28,7 +28,9 @@ export class ServerlessStack extends cdk.Stack {
 
     const qrHandler = new lambda.Function(this, 'QrHandlerFunction', {
       architecture: lambda.Architecture.ARM_64,
-      code: lambda.Code.fromAsset('lambda/qr-handler'),
+      code: lambda.Code.fromAsset('lambda/qr-handler', {
+        exclude: ['*.d.ts', '*.mjs', '*.ts', '.gitkeep'],
+      }),
       environment: {
         ENV_NAME: props.config.envName,
         PROJECT_NAME: props.config.projectName,
@@ -49,7 +51,9 @@ export class ServerlessStack extends cdk.Stack {
 
     const notificationHandler = new lambda.Function(this, 'NotificationHandlerFunction', {
       architecture: lambda.Architecture.ARM_64,
-      code: lambda.Code.fromAsset('lambda/notification-handler'),
+      code: lambda.Code.fromAsset('lambda/notification-handler', {
+        exclude: ['*.d.ts', '*.mjs', '*.ts', '.gitkeep'],
+      }),
       environment: {
         ENV_NAME: props.config.envName,
         NOTIFICATIONS_QUEUE_URL: props.notificationsQueue.queueUrl,

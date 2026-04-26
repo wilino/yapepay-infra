@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
@@ -6,6 +7,7 @@ import { EnvironmentConfig } from '../config/environment.js';
 
 export interface MessagingStackProps extends cdk.StackProps {
   readonly config: EnvironmentConfig;
+  readonly encryptionKey: kms.IKey;
 }
 
 /**
@@ -26,7 +28,9 @@ export class MessagingStack extends cdk.Stack {
       : cdk.RemovalPolicy.RETAIN;
 
     const commonQueueProps: Omit<sqs.QueueProps, 'deadLetterQueue' | 'fifo' | 'queueName'> = {
-      encryption: sqs.QueueEncryption.SQS_MANAGED,
+      dataKeyReuse: cdk.Duration.minutes(5),
+      encryption: sqs.QueueEncryption.KMS,
+      encryptionMasterKey: props.encryptionKey,
       enforceSSL: true,
       removalPolicy,
       retentionPeriod: cdk.Duration.days(14),

@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 
@@ -6,6 +7,7 @@ import { EnvironmentConfig } from '../config/environment.js';
 
 export interface StorageStackProps extends cdk.StackProps {
   readonly config: EnvironmentConfig;
+  readonly encryptionKey: kms.IKey;
 }
 
 /**
@@ -22,7 +24,9 @@ export class StorageStack extends cdk.Stack {
     const commonBucketProps: Omit<s3.BucketProps, 'bucketName'> = {
       autoDeleteObjects: props.config.removalPolicyDestroy,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      encryption: s3.BucketEncryption.S3_MANAGED,
+      bucketKeyEnabled: true,
+      encryption: s3.BucketEncryption.KMS,
+      encryptionKey: props.encryptionKey,
       enforceSSL: true,
       lifecycleRules: [
         {

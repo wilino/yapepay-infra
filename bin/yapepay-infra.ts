@@ -5,6 +5,7 @@ import { devConfig } from '../lib/config/dev.js';
 import { ApiStack } from '../lib/stacks/api-stack.js';
 import { MessagingStack } from '../lib/stacks/messaging-stack.js';
 import { ObservabilityStack } from '../lib/stacks/observability-stack.js';
+import { SecurityStack } from '../lib/stacks/security-stack.js';
 import { ServerlessStack } from '../lib/stacks/serverless-stack.js';
 import { StorageStack } from '../lib/stacks/storage-stack.js';
 
@@ -30,13 +31,20 @@ for (const [key, value] of Object.entries(devConfig.tags)) {
   cdk.Tags.of(app).add(key, value);
 }
 
+const securityStack = new SecurityStack(app, 'YapepayDevSecurityStack', {
+  config: devConfig,
+  env,
+});
+
 new StorageStack(app, 'YapepayDevStorageStack', {
   config: devConfig,
+  encryptionKey: securityStack.sharedKey,
   env,
 });
 
 const messagingStack = new MessagingStack(app, 'YapepayDevMessagingStack', {
   config: devConfig,
+  encryptionKey: securityStack.sharedKey,
   env,
 });
 

@@ -11,7 +11,8 @@ Infraestructura como código para **YapePay** usando **AWS CDK + TypeScript**.
 
 > **Fase: MVP inicial — stacks base implementados.**
 >
-> El repositorio ya instancia los primeros stacks reales del MVP:
+> El repositorio ya instancia `YapepayDevSecurityStack`, con una KMS CMK
+> compartida usada por S3 y SQS, y los stacks reales del MVP:
 > `YapepayDevStorageStack`, con buckets S3 para documentos KYC y comprobantes
 > PDF, y `YapepayDevMessagingStack`, con colas SQS para eventos de transacción
 > y notificaciones. También instancia `YapepayDevServerlessStack`, con Lambdas
@@ -82,7 +83,7 @@ yapepay-infra/
 │   │   ├── staging.ts
 │   │   └── prod.ts
 │   ├── constructs/                 # constructs reutilizables (placeholder)
-│   ├── stacks/                     # 14 stacks placeholder
+│   ├── stacks/                     # stacks CDK del proyecto
 │   │   ├── storage-stack.ts
 │   │   ├── messaging-stack.ts
 │   │   ├── serverless-stack.ts
@@ -99,8 +100,8 @@ yapepay-infra/
 │   │   └── pipeline-stack.ts
 │   └── yapepay-infra-stage.ts
 ├── lambda/
-│   ├── qr-handler/                 # solo .gitkeep por ahora
-│   └── notification-handler/       # solo .gitkeep por ahora
+│   ├── qr-handler/                 # handler TypeScript MVP
+│   └── notification-handler/       # handler TypeScript MVP
 ├── docs/                           # documentación pública (sí versionada)
 │   ├── architecture.md
 │   ├── deployment.md
@@ -130,11 +131,12 @@ yapepay-infra/
 
 Orden de implementación previsto (plan §15–§16):
 
-1. **StorageStack** — S3 KYC + comprobantes con versioning. ✅
-2. **MessagingStack** — SQS FIFO + Standard + DLQ. ✅
-3. **ServerlessStack** — Lambdas QR + Notification. ✅
-4. **ApiStack** — HTTP API v2 + Authorizer mock. ✅
-5. **ObservabilityStack** — CloudWatch + X-Ray básicos. ✅
+1. **SecurityStack** — KMS CMK compartida para fases posteriores. ✅
+2. **StorageStack** — S3 KYC + comprobantes con versioning. ✅
+3. **MessagingStack** — SQS FIFO + Standard + DLQ. ✅
+4. **ServerlessStack** — Lambdas QR + Notification. ✅
+5. **ApiStack** — HTTP API v2 + Authorizer mock. ✅
+6. **ObservabilityStack** — CloudWatch + X-Ray básicos. ✅
 
 Stacks posteriores (`Network`, `Database`, `Cache`, `Services`, `Auth`,
 `Edge`, `Audit`, `Pipeline`) se implementan después del MVP.
@@ -155,6 +157,9 @@ La documentación interna detallada vive en `.docs/` y **no se versiona**:
 - `.docs/bitacora_serverless_stack.md`
 - `.docs/bitacora_api_stack.md`
 - `.docs/bitacora_observability_stack.md`
+- `.docs/bitacora_security_stack.md`
+- `.docs/bitacora_kms_integration.md`
+- `.docs/bitacora_lambda_handlers.md`
 
 ## Seguridad
 
@@ -163,15 +168,21 @@ La documentación interna detallada vive en `.docs/` y **no se versiona**:
 - `.gitignore` bloquea `*.csv`, `*credentials*`, `.env*` y `cdk.out`.
 - Activar MFA en la cuenta root y un budget de alerta antes de cualquier
   `cdk deploy`.
-- `StorageStack` usa bloqueo público total, versioning, SSE-S3 y `enforceSSL`.
+- `SecurityStack` crea una KMS CMK compartida con rotación habilitada y alias
+  `alias/yapepay/dev`. Secrets Manager queda pendiente hasta implementar RDS o
+  un consumidor real de secretos.
+- `StorageStack` usa bloqueo público total, versioning, SSE-KMS con la CMK
+  compartida, bucket keys y `enforceSSL`.
   En `dev`, `autoDeleteObjects` queda habilitado por `removalPolicyDestroy`
   para facilitar limpieza; no usar esta política con datos reales.
-- `MessagingStack` usa SQS con SSE-SQS, `enforceSSL`, retención de 14 días y
-  DLQs con `maxReceiveCount=5`. Se evita KMS custom hasta implementar
-  `SecurityStack`.
+- `MessagingStack` usa SQS con SSE-KMS mediante la CMK compartida,
+  `enforceSSL`, retención de 14 días y DLQs con `maxReceiveCount=5`.
 - `ServerlessStack` usa Lambdas Node.js 22 arm64, log groups con retención de
   7 días en dev y un event source mapping desde SQS hacia
-  `notification-handler`.
+  `notification-handler`. `qr-handler` valida el payload mínimo de
+  `POST /v1/qr` según el contrato Smithy: `amount`, `currency`,
+  `description` y `ttlMinutes`, y responde con `GenerateQROutput` usando
+  estructura `qrCode`.
 - `ApiStack` expone HTTP API v2 con `POST /v1/qr`, CORS acotado para dev,
   throttling básico y access logs con retención de 7 días. JWT/Keycloak queda
   pendiente hasta implementar `AuthStack`.
