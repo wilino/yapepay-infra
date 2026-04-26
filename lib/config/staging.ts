@@ -8,6 +8,7 @@ export const stagingConfig: EnvironmentConfig = {
   projectName: PROJECT_NAME,
   envName: 'staging',
   region: DEFAULT_REGION,
+  removalPolicyDestroy: false,
   features: {
     enableCostlyResources: false,
     enableSecurityHardening: true,

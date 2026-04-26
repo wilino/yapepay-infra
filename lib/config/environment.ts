@@ -35,6 +35,11 @@ export interface EnvironmentConfig {
   readonly region: string;
   /** Cuenta AWS opcional. Si no se define se toma de `CDK_DEFAULT_ACCOUNT`. */
   readonly account?: string;
+  /**
+   * Permite destruir recursos efímeros del ambiente al ejecutar `cdk destroy`.
+   * Debe permanecer `false` en ambientes no efímeros.
+   */
+  readonly removalPolicyDestroy: boolean;
   readonly features: FeatureFlags;
   /** Tags globales que se aplican a todos los stacks. */
   readonly tags: Record<string, string>;

@@ -8,6 +8,7 @@ export const prodConfig: EnvironmentConfig = {
   projectName: PROJECT_NAME,
   envName: 'prod',
   region: DEFAULT_REGION,
+  removalPolicyDestroy: false,
   features: {
     enableCostlyResources: true,
     enableSecurityHardening: true,

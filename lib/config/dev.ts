@@ -9,6 +9,7 @@ export const devConfig: EnvironmentConfig = {
   envName: 'dev',
   region: DEFAULT_REGION,
   // account se toma de CDK_DEFAULT_ACCOUNT en el entrypoint si no se define.
+  removalPolicyDestroy: true,
   features: {
     enableCostlyResources: false,
     enableSecurityHardening: false,

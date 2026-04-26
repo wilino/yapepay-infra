@@ -9,11 +9,16 @@ Infraestructura como código para **YapePay** usando **AWS CDK + TypeScript**.
 
 ## Estado actual
 
-> **Fase: preparación completada — sin stacks funcionales todavía.**
+> **Fase: MVP inicial — stacks base implementados.**
 >
-> El repositorio está estructurado y listo para empezar a implementar el MVP.
-> Todos los stacks en `lib/stacks/` son **placeholders** sin recursos AWS y
-> `cdk synth` produce un assembly vacío (sin stacks instanciados).
+> El repositorio ya instancia los primeros stacks reales del MVP:
+> `YapepayDevStorageStack`, con buckets S3 para documentos KYC y comprobantes
+> PDF, y `YapepayDevMessagingStack`, con colas SQS para eventos de transacción
+> y notificaciones. También instancia `YapepayDevServerlessStack`, con Lambdas
+> MVP para QR y notificaciones, y `YapepayDevApiStack`, con HTTP API v2 para
+> `POST /v1/qr`. Además instancia `YapepayDevObservabilityStack`, con dashboard
+> y alarmas CloudWatch para el MVP. Los demás stacks en `lib/stacks/` siguen
+> como **placeholders** y no se instancian todavía.
 
 ---
 
@@ -125,11 +130,11 @@ yapepay-infra/
 
 Orden de implementación previsto (plan §15–§16):
 
-1. **StorageStack** — S3 KYC + comprobantes con versioning.
-2. **MessagingStack** — SQS FIFO + Standard + DLQ.
-3. **ServerlessStack** — Lambdas QR + Notification.
-4. **ApiStack** — HTTP API v2 + Authorizer mock.
-5. **ObservabilityStack** — CloudWatch + X-Ray básicos.
+1. **StorageStack** — S3 KYC + comprobantes con versioning. ✅
+2. **MessagingStack** — SQS FIFO + Standard + DLQ. ✅
+3. **ServerlessStack** — Lambdas QR + Notification. ✅
+4. **ApiStack** — HTTP API v2 + Authorizer mock. ✅
+5. **ObservabilityStack** — CloudWatch + X-Ray básicos. ✅
 
 Stacks posteriores (`Network`, `Database`, `Cache`, `Services`, `Auth`,
 `Edge`, `Audit`, `Pipeline`) se implementan después del MVP.
@@ -145,6 +150,11 @@ La documentación interna detallada vive en `.docs/` y **no se versiona**:
 
 - `.docs/plan_implementacion_cdk_yapepay.md`
 - `.docs/bitacora_implementacion.md`
+- `.docs/bitacora_storage_stack.md`
+- `.docs/bitacora_messaging_stack.md`
+- `.docs/bitacora_serverless_stack.md`
+- `.docs/bitacora_api_stack.md`
+- `.docs/bitacora_observability_stack.md`
 
 ## Seguridad
 
@@ -153,3 +163,18 @@ La documentación interna detallada vive en `.docs/` y **no se versiona**:
 - `.gitignore` bloquea `*.csv`, `*credentials*`, `.env*` y `cdk.out`.
 - Activar MFA en la cuenta root y un budget de alerta antes de cualquier
   `cdk deploy`.
+- `StorageStack` usa bloqueo público total, versioning, SSE-S3 y `enforceSSL`.
+  En `dev`, `autoDeleteObjects` queda habilitado por `removalPolicyDestroy`
+  para facilitar limpieza; no usar esta política con datos reales.
+- `MessagingStack` usa SQS con SSE-SQS, `enforceSSL`, retención de 14 días y
+  DLQs con `maxReceiveCount=5`. Se evita KMS custom hasta implementar
+  `SecurityStack`.
+- `ServerlessStack` usa Lambdas Node.js 22 arm64, log groups con retención de
+  7 días en dev y un event source mapping desde SQS hacia
+  `notification-handler`.
+- `ApiStack` expone HTTP API v2 con `POST /v1/qr`, CORS acotado para dev,
+  throttling básico y access logs con retención de 7 días. JWT/Keycloak queda
+  pendiente hasta implementar `AuthStack`.
+- `ObservabilityStack` crea dashboard, alarmas CloudWatch y un SNS topic sin
+  suscriptores. X-Ray queda activo en Lambdas; HTTP API v2 mantiene access logs
+  y métricas detalladas.
