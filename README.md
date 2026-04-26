@@ -1,208 +1,219 @@
 # yapepay-infra
 
-Infraestructura como código para **YapePay** usando **AWS CDK + TypeScript**.
+Infraestructura como código para el MVP de **YapePay**, implementada con
+**AWS CDK v2** y **TypeScript**.
 
-> Plan completo (local-only, no versionado): `.docs/plan_implementacion_cdk_yapepay.md`
-> Bitácora local (no versionada): `.docs/bitacora_implementacion.md`
+El repositorio define la base cloud inicial para generación de QR, mensajería
+asíncrona, almacenamiento seguro, observabilidad y validación HTTP manual. El
+ambiente objetivo actual es `dev` en `us-east-1`.
 
----
+## Estado
 
-## Estado actual
+Versión MVP lista para primer deploy controlado.
 
-> **Fase: MVP inicial — stacks base implementados.**
->
-> El repositorio ya instancia `YapepayDevSecurityStack`, con una KMS CMK
-> compartida usada por S3 y SQS, y los stacks reales del MVP:
-> `YapepayDevStorageStack`, con buckets S3 para documentos KYC y comprobantes
-> PDF, y `YapepayDevMessagingStack`, con colas SQS para eventos de transacción
-> y notificaciones. También instancia `YapepayDevServerlessStack`, con Lambdas
-> MVP para QR y notificaciones, y `YapepayDevApiStack`, con HTTP API v2 para
-> `POST /v1/qr`. Además instancia `YapepayDevObservabilityStack`, con dashboard
-> y alarmas CloudWatch para el MVP. Los demás stacks en `lib/stacks/` siguen
-> como **placeholders** y no se instancian todavía.
->
-> Prerrequisitos operativos ya verificados por CLI: MFA root activo y Budget
-> mensual `yapepay-dev-monthly-budget` configurado con alertas.
+- Cuenta AWS objetivo: `628884045138`
+- Región: `us-east-1`
+- Perfil AWS CLI: `yapepay`
+- Bootstrap CDK: ya ejecutado previamente
+- MFA root: verificado
+- Budget mensual: `yapepay-dev-monthly-budget`, USD 20, alertas 50/80/100
+- Deploy automático: no configurado
 
----
+Antes de desplegar, revisar siempre el diff y ejecutar el script de readiness.
+
+## Arquitectura MVP
+
+| Stack | Estado | Responsabilidad |
+|---|---:|---|
+| `YapepayDevSecurityStack` | Listo | KMS CMK compartida con rotación y alias `alias/yapepay/dev`. |
+| `YapepayDevStorageStack` | Listo | Buckets S3 para documentos KYC y comprobantes PDF. |
+| `YapepayDevMessagingStack` | Listo | Colas SQS para eventos de transacción, notificaciones y DLQs. |
+| `YapepayDevServerlessStack` | Listo | Lambdas Node.js 22 para QR y notificaciones. |
+| `YapepayDevApiStack` | Listo | HTTP API v2 con `POST /v1/qr`. |
+| `YapepayDevObservabilityStack` | Listo | Dashboard, alarmas CloudWatch y SNS topic de alarmas. |
+
+Stacks posteriores como `Network`, `Database`, `Cache`, `Services`, `Auth`,
+`Edge`, `Audit` y `Pipeline` existen como base de proyecto, pero no se
+instancian en esta versión MVP.
+
+## Recursos principales
+
+- S3:
+  - Bucket KYC.
+  - Bucket de comprobantes PDF.
+  - Bloqueo público total, versioning, SSE-KMS, bucket keys y `enforceSSL`.
+- SQS:
+  - Cola FIFO de eventos de transacción.
+  - Cola Standard de notificaciones.
+  - DLQs dedicadas.
+  - Cifrado SSE-KMS y políticas que fuerzan transporte seguro.
+- Lambda:
+  - `qr-handler`.
+  - `notification-handler`.
+  - Runtime Node.js 22, arquitectura ARM64 y logs con retención acotada en dev.
+- API Gateway:
+  - HTTP API v2.
+  - Ruta `POST /v1/qr`.
+  - CORS y throttling básicos para dev.
+- Observabilidad:
+  - Dashboard CloudWatch.
+  - Alarmas de API, Lambdas y DLQs.
+  - SNS topic sin suscriptores por defecto.
 
 ## Requisitos
 
-- macOS (Apple Silicon recomendado) — los scripts asumen `bash` + `zsh`.
-- Node.js ≥ 22 LTS, npm ≥ 10.
-- TypeScript ≥ 5.9, AWS CDK CLI ≥ 2.1119.
-- AWS CLI v2 con un perfil válido.
-- Git, VS Code. Opcional: Docker, jq, tree.
+- Node.js 22 LTS o superior.
+- npm 10 o superior.
+- AWS CLI v2.
+- AWS CDK CLI 2.1119.
+- Perfil AWS CLI `yapepay`.
+- Git.
 
-## Verificación local
+Verificación local:
 
 ```bash
 chmod +x scripts/*.sh
 ./scripts/check-prerequisites.sh
 ```
 
-Reporta SO/arquitectura, herramientas requeridas, credenciales AWS y
-`cdk doctor`. No instala nada.
+## Instalación
 
-## Configuración AWS
+```bash
+npm install
+npm run build
+npm test
+```
 
-Perfil utilizado por el proyecto:
+## Comandos de trabajo
+
+```bash
+npm run build                      # compila TypeScript
+npm test                           # ejecuta Jest
+./scripts/check-prerequisites.sh   # verifica herramientas locales
+./scripts/check-deploy-readiness.sh # verifica cuenta, MFA root y Budget
+./scripts/synth.sh                 # build + cdk synth
+./scripts/diff.sh                  # build + cdk diff
+```
+
+## Deploy controlado
+
+No hay deploy automático. El primer despliegue debe ser manual y revisado.
+
+Flujo recomendado:
 
 ```bash
 export AWS_PROFILE=yapepay
-aws sts get-caller-identity --profile yapepay
+
+./scripts/check-deploy-readiness.sh
+./scripts/diff.sh
+./scripts/deploy-dev.sh
 ```
 
-Cuenta `628884045138`, región `us-east-1`. Bootstrap CDK ya ejecutado.
+`deploy-dev.sh` pide una confirmación literal antes de ejecutar
+`cdk deploy --all`. No ejecutar deploy si el readiness falla o si el diff no
+fue revisado.
 
-## Comandos del proyecto
+Para destruir el ambiente dev, usar solamente con intención explícita:
 
 ```bash
-npm install                       # dependencias
-npm run build                     # tsc
-npm test                          # jest
-./scripts/check-prerequisites.sh  # auditoría entorno
-./scripts/check-deploy-readiness.sh # verifica MFA root + Budget (solo lectura)
-./scripts/synth.sh                # build + cdk synth
-./scripts/diff.sh                 # build + cdk diff
+./scripts/destroy-dev.sh
 ```
 
-> ⚠️ **Antes de cualquier `cdk deploy`:**
-> - Ejecutar `./scripts/check-deploy-readiness.sh`.
-> - Revisar `./scripts/diff.sh`.
-> - Desplegar solo con confirmación explícita.
->
-> Cuando los pre-requisitos estén listos, usar `./scripts/deploy-dev.sh` (pide
-> confirmación literal). Para limpiar: `./scripts/destroy-dev.sh`.
+## Validación HTTP
 
-## Estructura de carpetas
+Después del deploy, obtener el output `HttpApiUrl`:
+
+```bash
+export YAPEPAY_API_BASE_URL="$(
+  aws cloudformation describe-stacks \
+    --stack-name YapepayDevApiStack \
+    --query "Stacks[0].Outputs[?OutputKey=='HttpApiUrl'].OutputValue | [0]" \
+    --output text \
+    --profile yapepay
+)"
+```
+
+Probar con `curl`:
+
+```bash
+./api-examples/curl/post-v1-qr-valid.sh
+./api-examples/curl/post-v1-qr-open.sh
+./api-examples/curl/post-v1-qr-invalid.sh
+```
+
+También se incluye una colección Postman:
+
+```text
+api-examples/postman/yapepay-mvp.postman_collection.json
+```
+
+Al importarla, actualizar la variable `baseUrl` con el valor de `HttpApiUrl`.
+
+## Estructura
 
 ```text
 yapepay-infra/
+├── api-examples/
+│   ├── curl/
+│   └── postman/
 ├── bin/
-│   └── yapepay-infra.ts            # entrypoint CDK (App + tags + env)
+│   └── yapepay-infra.ts
+├── lambda/
+│   ├── notification-handler/
+│   └── qr-handler/
 ├── lib/
 │   ├── config/
-│   │   ├── environment.ts          # tipos e interfaces
-│   │   ├── dev.ts
-│   │   ├── staging.ts
-│   │   └── prod.ts
-│   ├── constructs/                 # constructs reutilizables (placeholder)
-│   ├── stacks/                     # stacks CDK del proyecto
-│   │   ├── storage-stack.ts
-│   │   ├── messaging-stack.ts
-│   │   ├── serverless-stack.ts
-│   │   ├── api-stack.ts
-│   │   ├── observability-stack.ts
-│   │   ├── security-stack.ts
-│   │   ├── network-stack.ts
-│   │   ├── database-stack.ts
-│   │   ├── cache-stack.ts
-│   │   ├── services-stack.ts
-│   │   ├── edge-stack.ts
-│   │   ├── auth-stack.ts
-│   │   ├── audit-stack.ts
-│   │   └── pipeline-stack.ts
-│   └── yapepay-infra-stage.ts
-├── lambda/
-│   ├── qr-handler/                 # handler TypeScript MVP
-│   └── notification-handler/       # handler TypeScript MVP
+│   ├── constructs/
+│   └── stacks/
 ├── scripts/
-│   ├── check-prerequisites.sh
-│   ├── setup-aws-educate.md
-│   ├── check-deploy-readiness.sh
-│   ├── bootstrap.sh
-│   ├── synth.sh
-│   ├── diff.sh
-│   ├── deploy-dev.sh
-│   └── destroy-dev.sh
 ├── test/
-│   ├── yapepay-infra.test.ts
-│   ├── lambda-handlers.test.ts
-│   └── qr-http-contract.test.ts
-├── .github/workflows/ci.yml
-├── .docs/                          # local-only · NO versionar
-│   ├── architecture.md
-│   ├── deployment.md
-│   ├── cost-control.md
-│   ├── aws-educate-notes.md
-│   ├── deploy-prerequisites.md
-│   ├── plan_implementacion_cdk_yapepay.md
-│   ├── bitacora_implementacion.md
-│   └── reviewer/
-│       └── checklist_avance_vs_plan.md
 ├── cdk.json
 ├── package.json
 ├── tsconfig.json
 └── README.md
 ```
 
-## Roadmap del MVP
+## Testing
 
-Orden de implementación previsto (plan §15–§16):
+La suite actual cubre:
 
-1. **SecurityStack** — KMS CMK compartida para fases posteriores. ✅
-2. **StorageStack** — S3 KYC + comprobantes con versioning. ✅
-3. **MessagingStack** — SQS FIFO + Standard + DLQ. ✅
-4. **ServerlessStack** — Lambdas QR + Notification. ✅
-5. **ApiStack** — HTTP API v2 + Authorizer mock. ✅
-6. **ObservabilityStack** — CloudWatch + X-Ray básicos. ✅
+- Assertions CDK de los stacks MVP.
+- Contrato local de handlers Lambda.
+- Contrato HTTP local para `POST /v1/qr`.
 
-Stacks posteriores (`Network`, `Database`, `Cache`, `Services`, `Auth`,
-`Edge`, `Audit`, `Pipeline`) se implementan después del MVP.
+Ejecutar:
 
-## Documentación
+```bash
+npm test
+```
 
-Toda la documentación técnica vive en `.docs/` y **no se versiona**. Esta
-decisión mantiene fuera del repositorio público el material académico,
-bitácoras, checklist de revisión y notas operativas locales.
+## Seguridad y costos
 
+- No versionar credenciales, archivos `.env`, claves CSV ni secretos.
+- `.docs/` es documentación local-only y no se versiona.
+- `cdk.out` no se versiona.
+- KMS CMK compartida con rotación habilitada.
+- S3 bloquea acceso público y fuerza SSL.
+- SQS fuerza SSL y usa SSE-KMS.
+- Logs y retenciones están acotados para dev.
+- Budget mensual configurado antes del primer deploy.
+- No se usan NAT Gateways, RDS, Redis, ECS, WAF ni CloudFront en esta versión.
+
+## Documentación local
+
+La documentación extendida, bitácoras y checklist viven en `.docs/` y quedan
+fuera de Git por diseño.
+
+Archivos locales principales:
+
+- `.docs/plan_implementacion_cdk_yapepay.md`
+- `.docs/reviewer/checklist_avance_vs_plan.md`
 - `.docs/architecture.md`
 - `.docs/deployment.md`
 - `.docs/cost-control.md`
-- `.docs/aws-educate-notes.md`
-- `.docs/deploy-prerequisites.md`
-- `.docs/plan_implementacion_cdk_yapepay.md`
-- `.docs/bitacora_implementacion.md`
-- `.docs/bitacora_storage_stack.md`
-- `.docs/bitacora_messaging_stack.md`
-- `.docs/bitacora_serverless_stack.md`
-- `.docs/bitacora_api_stack.md`
-- `.docs/bitacora_observability_stack.md`
-- `.docs/bitacora_security_stack.md`
-- `.docs/bitacora_kms_integration.md`
-- `.docs/bitacora_lambda_handlers.md`
-- `.docs/bitacora_qr_payload_validation.md`
-- `.docs/bitacora_qr_smithy_output.md`
-- `.docs/bitacora_qr_http_contract.md`
-- `.docs/bitacora_deploy_prerequisites.md`
-- `.docs/reviewer/checklist_avance_vs_plan.md`
 
-## Seguridad
+## Próximo paso
 
-- Las claves CSV de IAM nunca deben vivir dentro del repo. Guardarlas en
-  `~/.aws-keys/` con permisos `600`.
-- `.gitignore` bloquea `*.csv`, `*credentials*`, `.env*` y `cdk.out`.
-- Activar MFA en la cuenta root y un budget de alerta antes de cualquier
-  `cdk deploy`.
-- `SecurityStack` crea una KMS CMK compartida con rotación habilitada y alias
-  `alias/yapepay/dev`. Secrets Manager queda pendiente hasta implementar RDS o
-  un consumidor real de secretos.
-- `StorageStack` usa bloqueo público total, versioning, SSE-KMS con la CMK
-  compartida, bucket keys y `enforceSSL`.
-  En `dev`, `autoDeleteObjects` queda habilitado por `removalPolicyDestroy`
-  para facilitar limpieza; no usar esta política con datos reales.
-- `MessagingStack` usa SQS con SSE-KMS mediante la CMK compartida,
-  `enforceSSL`, retención de 14 días y DLQs con `maxReceiveCount=5`.
-- `ServerlessStack` usa Lambdas Node.js 22 arm64, log groups con retención de
-  7 días en dev y un event source mapping desde SQS hacia
-  `notification-handler`. `qr-handler` valida el payload mínimo de
-  `POST /v1/qr` según el contrato Smithy: `amount`, `currency`,
-  `description` y `ttlMinutes`, y responde con `GenerateQROutput` usando
-  estructura `qrCode`.
-- `ApiStack` expone HTTP API v2 con `POST /v1/qr`, CORS acotado para dev,
-  throttling básico y access logs con retención de 7 días. JWT/Keycloak queda
-  pendiente hasta implementar `AuthStack`.
-- `ObservabilityStack` crea dashboard, alarmas CloudWatch y un SNS topic sin
-  suscriptores. X-Ray queda activo en Lambdas; HTTP API v2 mantiene access logs
-  y métricas detalladas.
+Ejecutar un deploy controlado del MVP cuando se apruebe explícitamente el diff.
+Después del deploy, validar `POST /v1/qr` con los scripts `curl` y la colección
+Postman incluida.
