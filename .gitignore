@@ -39,4 +39,5 @@ dist/
 !/.dockerignore
 !/.husky/
 !/.husky/**
+!**/.gitkeep
 

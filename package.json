@@ -1,8 +1,8 @@
 {
-  "name": "yapepay-cdk",
+  "name": "yapepay-infra",
   "version": "0.1.0",
   "bin": {
-    "yapepay-cdk": "bin/yapepay-cdk.js"
+    "yapepay-infra": "bin/yapepay-infra.js"
   },
   "scripts": {
     "build": "tsc",
